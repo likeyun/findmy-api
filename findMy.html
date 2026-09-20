@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>查找 - Find My</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="shortcut icon" href="https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/e9/f4/81/e9f481cb-3e8d-db61-8af6-5a163732fcf3/Placeholder.mill/400x400bb-75.webp" />
+<style>
+:root {
+  --ios-blue: #007aff;
+  --ios-bg: rgba(248, 248, 250, 0.88);
+  --ios-card-bg: rgba(255, 255, 255, 0.75);
+  --ios-border: rgba(255, 255, 255, 0.6);
+  --ios-text: #1c1c1e;
+  --ios-subtext: #8e8e93;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","PingFang SC","Helvetica Neue",Helvetica,Arial,sans-serif;background:#e5e3df;color:var(--ios-text);user-select:none}
+button,input{font:inherit;outline:none;border:none}
+
+/* 地图容器 */
+#map{position:absolute;inset:0;z-index:1;background:#e5e3df}
+.leaflet-control-attribution{font-size:9px!important;opacity:.4;background:transparent!important}
+.leaflet-control-zoom{display:none!important}
+
+/* 毛玻璃面板 */
+.glass-panel {
+  background: var(--ios-bg);
+  backdrop-filter: blur(25px) saturate(190%);
+  -webkit-backdrop-filter: blur(25px) saturate(190%);
+  border: 1px solid var(--ios-border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+/* 顶部操作按钮 */
+.top-bar {
+  position: fixed; top: calc(env(safe-area-inset-top) + 12px); right: 12px; z-index: 20;
+  display: flex; gap: 8px; pointer-events: auto;
+}
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--ios-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--ios-blue); font-size: 16px; font-weight: 600;
+  transition: transform 0.1s ease;
+}
+.icon-btn:active { transform: scale(0.92); }
+
+/* --- 移动端布局 (Mobile) --- */
+@media (max-width: 767px) {
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    height: 82vh;
+    border-radius: 20px 20px 0 0;
+    display: flex; flex-direction: column;
+    transform: translateY(calc(100% - 240px)); /* 默认折叠状态 */
+    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sheet.expanded { transform: translateY(0); }
+
+  .handle-wrap { 
+    height: 28px; 
+    width: 100%; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    cursor: pointer;
+  }
+  
+  /* 灰色小文字按钮样式 */
+  .toggle-text {
+    font-size: 11px;
+    color: var(--ios-subtext);
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+  }
+  .handle-wrap:active .toggle-text {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .location-btn {
+    position: fixed; right: 14px; bottom: 255px; z-index: 15;
+    transition: bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .detail {
+    position: fixed; left: 10px; right: 10px; bottom: 250px; z-index: 25;
+    display: none; transition: bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+/* --- 桌面端布局 (Desktop / iPad) --- */
+@media (min-width: 768px) {
+  .sheet {
+    position: fixed; top: 16px; left: 16px; bottom: 16px; z-index: 30;
+    width: 360px; border-radius: 20px;
+    display: flex; flex-direction: column;
+    transform: none !important;
+  }
+  .handle-wrap { display: none; }
+  
+  .location-btn {
+    position: fixed; right: 16px; bottom: 20px; z-index: 15;
+  }
+
+  .detail {
+    position: fixed; left: 388px; bottom: 16px; z-index: 25;
+    width: 340px; display: none;
+  }
+}
+
+/* 抽屉/侧边栏头部 */
+.sheet-header { padding: 0 20px 10px; display: flex; align-items: baseline; justify-content: space-between; }
+.sheet-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+.sheet-count { font-size: 13px; color: var(--ios-subtext); font-weight: 500; }
+
+/* 分段控制器 */
+.tabs {
+  margin: 0 16px 12px; padding: 2px;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: rgba(118, 118, 128, 0.12); border-radius: 9px;
+}
+.tab {
+  border: 0; background: transparent; padding: 6px 0; border-radius: 7px;
+  font-size: 13px; font-weight: 500; color: var(--ios-text); cursor: pointer;
+  transition: all 0.2s ease;
+}
+.tab.active { background: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+
+/* 列表渲染 */
+.list { overflow-y: auto; flex: 1; padding: 0 8px 12px; -webkit-overflow-scrolling: touch; }
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+
+.item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 14px; cursor: pointer;
+  margin-bottom: 2px; transition: background 0.15s ease;
+}
+.item:hover { background: rgba(0,0,0,0.04); }
+.item.active { background: rgba(0, 122, 255, 0.12); }
+.item-icon {
+  width: 44px; height: 44px; flex: none; border-radius: 50%;
+  background: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.item-body { flex: 1; min-width: 0; }
+.item-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-sub { margin-top: 2px; font-size: 12px; color: var(--ios-subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chevron { color: #c7c7cc; font-size: 18px; font-weight: 600; }
+
+/* 详情面板 */
+.detail.show { display: block; animation: fadeIn 0.2s ease-out; }
+.detail-card { padding: 16px; border-radius: 20px; position: relative; }
+.close-detail { position: absolute; top: 12px; right: 12px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,0.06); color: var(--ios-subtext); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+.detail-top { display: flex; align-items: center; gap: 12px; }
+.detail-icon {
+  width: 48px; height: 48px; border-radius: 50%; background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.detail-info { flex: 1; min-width: 0; }
+.detail-name { font-size: 17px; font-weight: 700; padding-right: 20px; }
+.detail-sub { font-size: 12px; color: var(--ios-subtext); margin-top: 2px; }
+
+.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+.detail-cell { background: rgba(118,118,128,0.08); border-radius: 10px; padding: 8px 4px; text-align: center; }
+.detail-label { font-size: 10px; color: var(--ios-subtext); }
+.detail-value { font-size: 12px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.action-btn {
+  height: 36px; border-radius: 10px; background: var(--ios-blue);
+  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: opacity 0.2s;
+}
+.action-btn:active { opacity: 0.8; }
+.action-btn.gray { background: rgba(118, 118, 128, 0.15); color: var(--ios-text); }
+
+/* Marker 样式 */
+.marker-wrap { background: transparent; border: none; }
+.ios-marker-container { position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }
+.ios-marker {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--ios-blue); border: 3px solid #fff;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: bold; font-size: 14px;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.ios-marker-container.selected .ios-marker {
+  width: 40px; height: 40px; background: #ff9500; font-size: 18px;
+}
+.ios-marker-pulse {
+  position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid var(--ios-blue); opacity: 0;
+  animation: pulse 2s infinite; pointer-events: none;
+}
+.ios-marker-container.selected .ios-marker-pulse { border-color: #ff9500; }
+
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* API Token 弹窗 */
+.token-mask {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.3); backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.token-mask.show { display: flex; }
+.token-card { width: min(90vw, 340px); border-radius: 20px; padding: 20px; text-align: center; }
+.token-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.token-desc { font-size: 12px; color: var(--ios-subtext); line-height: 1.4; margin-bottom: 16px; }
+.token-input {
+  width: 100%; height: 40px; border: 1px solid rgba(0,0,0,0.15); border-radius: 10px;
+  padding: 0 12px; font-size: 14px; background: rgba(255,255,255,0.8);
+  margin-bottom: 14px; text-align: center;
+}
+.token-input:focus { border-color: var(--ios-blue); background: #fff; }
+
+.loading {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 16px); transform: translateX(-50%);
+  z-index: 80; padding: 8px 16px; border-radius: 20px;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(10px);
+  color: #fff; font-size: 12px; font-weight: 500; display: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.loading.show { display: block; }
+.empty { padding: 40px 20px; text-align: center; color: var(--ios-subtext); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 顶部设置按钮 -->
+<div class="top-bar">
+  <button class="icon-btn" onclick="openToken()" title="设置 Token">•••</button>
+</div>
+
+<!-- 快速定位按钮 -->
+<button class="icon-btn location-btn" id="locBtn" onclick="fitAll()" title="缩放适应全部物品">⌖</button>
+
+<!-- 详情卡片 -->
+<div class="detail" id="detail">
+  <div class="detail-card glass-panel">
+    <div class="close-detail" onclick="closeDetail()">✕</div>
+    <div class="detail-top">
+      <div class="detail-icon" id="detailIcon">📍</div>
+      <div class="detail-info">
+        <div class="detail-name" id="detailName">-</div>
+        <div class="detail-sub" id="detailSub">-</div>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-cell">
+        <div class="detail-label">更新时间</div>
+        <div class="detail-value" id="detailTime">-</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">定位精度</div>
+        <div class="detail-value" id="detailAccuracy">-</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">设备型号</div>
+        <div class="detail-value" id="detailModel">-</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="action-btn gray" onclick="refreshData()">刷新位置</button>
+      <button class="action-btn" onclick="openAMap()">高德导航</button>
+    </div>
+  </div>
+</div>
+
+<!-- 主抽屉 / 侧边栏 -->
+<div class="sheet glass-panel" id="sheet">
+  <!-- 点击切换文字按钮 -->
+  <div class="handle-wrap" onclick="toggleSheet()">
+    <span class="toggle-text" id="toggleText">点击展开</span>
+  </div>
+
+  <div class="sheet-header">
+    <div class="sheet-title">物品</div>
+    <div class="sheet-count" id="countText">0 个</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab">设备</button>
+    <button class="tab active">物品</button>
+    <button class="tab">我</button>
+  </div>
+
+  <div class="list" id="itemList">
+    <div class="empty">正在加载数据...</div>
+  </div>
+</div>
+
+<!-- API Token 弹窗 -->
+<div class="token-mask" id="tokenMask">
+  <div class="token-card glass-panel">
+    <div class="token-title">Find My API</div>
+    <div class="token-desc">请输入您的 Token，数据将仅安全保存在本地浏览器。</div>
+    <input class="token-input" id="tokenInput" type="password" placeholder="粘贴 API Token">
+    <div class="actions">
+      <button class="action-btn gray" onclick="closeToken()">取消</button>
+      <button class="action-btn" onclick="saveToken()">保存并加载</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading">正在更新位置…</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API = 'https://findmy.abc.com/api/findmy'; // 改为你的域名
+const REFRESH_API = 'https://findmy.abc.com/api/findmy/refresh'; // 改为你的域名
+
+let devices = [];
+let currentIndex = -1;
+let markers = [];
+let map;
+
+/* WGS-84 转 GCJ-02 火星坐标系（高德地图纠偏） */
+const PI = 3.1415926535897932384626;
+const a = 6378245.0;
+const ee = 0.00669342162296594323;
+
+function transformLat(x, y) {
+    let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+    ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+    return ret;
+}
+
+function transformLon(x, y) {
+    let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+    ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+    return ret;
+}
+
+function wgs84ToGcj02(lng, lat) {
+    if (lng == null || lat == null) return [0, 0];
+    let dLat = transformLat(lng - 105.0, lat - 35.0);
+    let dLon = transformLon(lng - 105.0, lat - 35.0);
+    let radLat = lat / 180.0 * PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - ee * magic * magic;
+    let sqrtMagic = Math.sqrt(magic);
+    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI);
+    dLon = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI);
+    return [lat + dLat, lng + dLon];
+}
+
+function initMap() {
+    map = L.map('map', {
+        zoomControl: false,
+        attributionControl: true
+    }).setView([23.10, 113.30], 11);
+
+    // 高德地图瓦片服务
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18,
+        minZoom: 3,
+        attribution: '© 高德地图'
+    }).addTo(map);
+}
+
+function getToken() { return localStorage.getItem('findmy_token') || ''; }
+function openToken() {
+    document.getElementById('tokenInput').value = getToken();
+    document.getElementById('tokenMask').classList.add('show');
+}
+function closeToken() { document.getElementById('tokenMask').classList.remove('show'); }
+
+function saveToken() {
+    const token = document.getElementById('tokenInput').value.trim();
+    if (!token) return;
+    localStorage.setItem('findmy_token', token);
+    closeToken();
+    loadData();
+}
+
+async function loadData() {
+    const token = getToken();
+    if (!token) { openToken(); return; }
+
+    showLoading(true);
+
+    try {
+        const res = await fetch(API + '?token=' + encodeURIComponent(token), { cache: 'no-store' });
+        
+        // 捕获 401 状态码，自动提示重新授权
+        if (res.status === 401) {
+            localStorage.removeItem('findmy_token');
+            openToken();
+            throw new Error('Token 已失效或不正确，请重新输入');
+        }
+
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+
+        const json = await res.json();
+        if (json.code !== 0) throw new Error(json.msg || '获取失败');
+
+        devices = (json.data || []).filter(v => v.status === 'success').map(item => {
+            const gcj = wgs84ToGcj02(item.longitude, item.latitude);
+            return {
+                ...item,
+                gcjLat: gcj[0],
+                gcjLng: gcj[1]
+            };
+        });
+
+        renderList();
+        renderMarkers();
+
+        if (devices.length) {
+            selectItem(currentIndex >= 0 ? Math.min(currentIndex, devices.length - 1) : 0, false);
+        }
+    } catch (e) {
+        document.getElementById('itemList').innerHTML =
+            `<div class="empty">${escapeHtml(e.message)}</div>`;
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function refreshData() {
+    const token = getToken();
+    if (!token) return openToken();
+
+    showLoading(true);
+    try {
+        await fetch(REFRESH_API + '?token=' + encodeURIComponent(token), { method: 'POST' });
+        setTimeout(loadData, 2500);
+    } catch (e) {
+        showLoading(false);
+    }
+}
+
+function renderList() {
+    const list = document.getElementById('itemList');
+    document.getElementById('countText').textContent = devices.length + ' 个';
+
+    if (!devices.length) {
+        list.innerHTML = '<div class="empty">暂无物品位置</div>';
+        return;
+    }
+
+    list.innerHTML = devices.map((item, index) => `
+        <div class="item ${index === currentIndex ? 'active' : ''}" onclick="selectItem(${index}, true)">
+            <div class="item-icon">${getIcon(item)}</div>
+            <div class="item-body">
+                <div class="item-name">${escapeHtml(item.name || '未命名物品')}</div>
+                <div class="item-sub">
+                    ${timeAgo(item.location_time)} · 精度 ${item.accuracy ?? '-'}m
+                </div>
+            </div>
+            <div class="chevron">›</div>
+        </div>
+    `).join('');
+}
+
+function renderMarkers() {
+    markers.forEach(m => m.remove());
+    markers = [];
+
+    devices.forEach((item, index) => {
+        if (item.gcjLat == null || item.gcjLng == null) return;
+
+        const isSelected = index === currentIndex;
+        const icon = L.divIcon({
+            className: 'marker-wrap',
+            html: `<div class="ios-marker-container ${isSelected ? 'selected' : ''}">
+                    <div class="ios-marker-pulse"></div>
+                    <div class="ios-marker">${getIcon(item)}</div>
+                  </div>`,
+            iconSize: isSelected ? [40, 40] : [36, 36],
+            iconAnchor: isSelected ? [20, 20] : [18, 18]
+        });
+
+        const marker = L.marker([item.gcjLat, item.gcjLng], { icon }).addTo(map);
+        marker.on('click', () => selectItem(index, true));
+        markers.push(marker);
+    });
+
+    if (currentIndex < 0) fitAll();
+}
+
+function selectItem(index, pan = true) {
+    const item = devices[index];
+    if (!item) return;
+
+    currentIndex = index;
+
+    renderList();
+    renderMarkers();
+
+    document.getElementById('detail').classList.add('show');
+    document.getElementById('detailIcon').textContent = getIcon(item);
+    document.getElementById('detailName').textContent = item.name || '未命名物品';
+    document.getElementById('detailSub').textContent = timeAgo(item.location_time) + ' · ' + formatDate(item.location_time);
+    document.getElementById('detailTime').textContent = timeAgo(item.location_time);
+    document.getElementById('detailAccuracy').textContent = item.accuracy != null ? item.accuracy + ' 米' : '-';
+    document.getElementById('detailModel').textContent = item.model || '-';
+
+    if (pan && item.gcjLat != null && item.gcjLng != null) {
+        map.flyTo([item.gcjLat, item.gcjLng], 16, { duration: 0.8 });
+    }
+}
+
+function closeDetail() {
+    document.getElementById('detail').classList.remove('show');
+}
+
+function fitAll() {
+    const points = devices
+        .filter(v => v.gcjLat != null && v.gcjLng != null)
+        .map(v => [v.gcjLat, v.gcjLng]);
+
+    if (!points.length) return;
+    if (points.length === 1) {
+        map.flyTo(points[0], 16);
+        return;
+    }
+    map.fitBounds(points, { padding: [50, 50] });
+}
+
+function openAMap() {
+    const item = devices[currentIndex];
+    if (!item) return;
+
+    const url = `https://uri.amap.com/marker?position=${item.gcjLng},${item.gcjLat}&name=${encodeURIComponent(item.name || '物品')}`;
+    window.open(url, '_blank');
+}
+
+function getIcon(item) {
+    const name = (item.name || '') + (item.model || '');
+    if (/车|电动车|摩托/i.test(name)) return '🛵';
+    if (/钥匙/i.test(name)) return '🔑';
+    if (/身份证|卡|钱包/i.test(name)) return '💳';
+    if (/包|背包|双肩包/i.test(name)) return '🎒';
+    if (/Tag|标签/i.test(name)) return '🏷️';
+    if (/耳机|AirPods/i.test(name)) return '🎧';
+    return '📍';
+}
+
+function timeAgo(time) {
+    if (!time) return '未知时间';
+    const d = new Date(time);
+    if (isNaN(d.getTime())) return '-';
+
+    const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (sec < 60) return '刚刚';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return min + ' 分钟前';
+    const hour = Math.floor(min / 60);
+    if (hour < 24) return hour + ' 小时前';
+    return Math.floor(hour / 24) + ' 天前';
+}
+
+function formatDate(time) {
+    const d = new Date(time);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", "&#039;");
+}
+
+function showLoading(show) {
+    document.getElementById('loading').classList.toggle('show', show);
+}
+
+/* 移动端点击文字切换展开/收起 */
+function toggleSheet() {
+    if (window.innerWidth >= 768) return;
+
+    const sheet = document.getElementById('sheet');
+    const locBtn = document.getElementById('locBtn');
+    const detail = document.getElementById('detail');
+    const toggleText = document.getElementById('toggleText');
+
+    const isExpanded = sheet.classList.toggle('expanded');
+
+    if (isExpanded) {
+        toggleText.textContent = '点击收起';
+        locBtn.style.bottom = 'calc(82vh + 14px)';
+        detail.style.bottom = 'calc(82vh + 10px)';
+    } else {
+        toggleText.textContent = '点击展开';
+        locBtn.style.bottom = '255px';
+        detail.style.bottom = '250px';
+    }
+}
+
+// 初始化执行
+initMap();
+if (getToken()) {
+    loadData();
+} else {
+    openToken();
+}
+
+setInterval(() => {
+    if (getToken()) loadData();
+}, 60000);
+</script>
+</body>
+</html>
