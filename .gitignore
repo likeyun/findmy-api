@@ -1,0 +1,25 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime
+.env
+account.json
+ani_libs.bin
+cache.json
+*.tmp
+logs/*
+!logs/.gitkeep
+
+# Find My accessory secrets
+devices/*
+!devices/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
