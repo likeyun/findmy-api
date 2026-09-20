@@ -22,6 +22,9 @@
 ## 详细的部署文档
 https://rcn7yg9nflbn.feishu.cn/wiki/NqTHwK3NWiSRMLkQl95ca6jEnSc
 
+## 图片
+![image](https://p0.ssl.qhimg.com/t11b673bcd6481eb34a363d8aa4.jpg)
+
 ## 工作原理
 
     Apple Find My Network
