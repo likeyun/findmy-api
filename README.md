@@ -19,6 +19,9 @@
 - 提供 Linux 一键安装脚本
 - 适合宝塔 Supervisor + Nginx HTTPS 反向代理
 
+## 详细的部署文档
+https://rcn7yg9nflbn.feishu.cn/wiki/NqTHwK3NWiSRMLkQl95ca6jEnSc
+
 ## 工作原理
 
     Apple Find My Network
