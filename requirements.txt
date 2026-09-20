@@ -1,0 +1,3 @@
+FindMy==0.10.2
+fastapi==0.141.1
+uvicorn==0.53.0
